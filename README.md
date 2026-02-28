@@ -1,4 +1,4 @@
-# COMP304 Project 1 — Shellish
+# COMP304 Project 1 - kyaylali22 - Kaya Yaylali — Shellish
 
 A custom Unix shell called **shellish**
 
