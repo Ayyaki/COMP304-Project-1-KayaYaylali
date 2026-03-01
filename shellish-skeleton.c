@@ -333,7 +333,7 @@ void run_chatroom(struct command_t *command) {
   mkdir(room_path, 0777); // ignore error if already exists
 
   // Create user's named pipe if it does not exist
-  char user_pipe[512];
+  char user_pipe[1024];
   snprintf(user_pipe, sizeof(user_pipe), "%s/%s", room_path, username);
   mkfifo(user_pipe, 0666); // ignore error if already exists
 
@@ -377,7 +377,7 @@ void run_chatroom(struct command_t *command) {
     if (len == 0) continue; // ignore empty lines
 
     // Format message as "username: message"
-    char message[1024];
+    char message[2048];
     snprintf(message, sizeof(message), "%s: %s", username, input);
 
     // Echo our own message locally
@@ -395,7 +395,7 @@ void run_chatroom(struct command_t *command) {
             strcmp(entry->d_name, username) == 0)
           continue;
 
-        char target_pipe[512];
+        char target_pipe[1024];
         snprintf(target_pipe, sizeof(target_pipe), "%s/%s", room_path, entry->d_name);
 
         // Fork a writer child for each target user
@@ -404,7 +404,7 @@ void run_chatroom(struct command_t *command) {
           // O_NONBLOCK: don't hang if the target user has no reader open
           int wfd = open(target_pipe, O_WRONLY | O_NONBLOCK);
           if (wfd >= 0) {
-            char msg_nl[1024];
+            char msg_nl[2048];
             snprintf(msg_nl, sizeof(msg_nl), "%s\n", message);
             write(wfd, msg_nl, strlen(msg_nl));
             close(wfd);
