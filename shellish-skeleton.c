@@ -1,9 +1,12 @@
+#include <dirent.h>  // opendir, readdir, closedir
 #include <errno.h>
 #include <fcntl.h>   // open, O_RDONLY, O_WRONLY, O_CREAT, O_TRUNC, O_APPEND
+#include <signal.h>  // kill, SIGTERM
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h> // mkdir, mkfifo
 #include <sys/wait.h>
 #include <termios.h> // termios, TCSANOW, ECHO, ICANON
 #include <unistd.h>
@@ -308,6 +311,119 @@ int prompt(struct command_t *command) {
 }
 
 /**
+ * Part III (b): Built-in chatroom command.
+ * Implements a simple group chat using named pipes (FIFOs).
+ * Room directory: /tmp/chatroom-<roomname>/
+ * Each user has a named pipe: /tmp/chatroom-<roomname>/<username>
+ * Usage: chatroom <roomname> <username>
+ */
+void run_chatroom(struct command_t *command) {
+  // Need at least: args[0]=chatroom, args[1]=roomname, args[2]=username, args[3]=NULL
+  if (command->arg_count < 4) {
+    printf("Usage: chatroom <roomname> <username>\n");
+    exit(1);
+  }
+
+  char *roomname = command->args[1];
+  char *username = command->args[2];
+
+  // Create room directory if it does not exist
+  char room_path[512];
+  snprintf(room_path, sizeof(room_path), "/tmp/chatroom-%s", roomname);
+  mkdir(room_path, 0777); // ignore error if already exists
+
+  // Create user's named pipe if it does not exist
+  char user_pipe[512];
+  snprintf(user_pipe, sizeof(user_pipe), "%s/%s", room_path, username);
+  mkfifo(user_pipe, 0666); // ignore error if already exists
+
+  printf("Welcome to %s!\n", roomname);
+  fflush(stdout);
+
+  // Fork a reader child: continuously reads from our named pipe and prints messages
+  pid_t reader_pid = fork();
+  if (reader_pid == 0) { // reader child
+    // Open pipe with O_RDWR to avoid blocking (no need to wait for a writer)
+    int fd = open(user_pipe, O_RDWR);
+    if (fd < 0) { perror("chatroom: open pipe"); exit(1); }
+
+    char buf[1024];
+    ssize_t n;
+    while (1) {
+      n = read(fd, buf, sizeof(buf) - 1);
+      if (n > 0) {
+        buf[n] = '\0';
+        if (n > 1 && buf[n - 1] == '\n') buf[n - 1] = '\0'; // strip newline
+        // Print received message, then reprint the input prompt
+        printf("\r[%s] %s\n[%s] %s > ", roomname, buf, roomname, username);
+        fflush(stdout);
+      }
+    }
+    close(fd);
+    exit(0);
+  }
+
+  // Parent: show prompt, read user input, and broadcast to other users
+  char input[1024];
+  while (1) {
+    printf("[%s] %s > ", roomname, username);
+    fflush(stdout);
+
+    if (fgets(input, sizeof(input), stdin) == NULL) break; // Ctrl+D exits
+
+    // Trim trailing newline
+    int len = strlen(input);
+    if (len > 0 && input[len - 1] == '\n') input[--len] = '\0';
+    if (len == 0) continue; // ignore empty lines
+
+    // Format message as "username: message"
+    char message[1024];
+    snprintf(message, sizeof(message), "%s: %s", username, input);
+
+    // Echo our own message locally
+    printf("[%s] %s\n", roomname, message);
+    fflush(stdout);
+
+    // Broadcast to all other users' pipes in the room
+    DIR *dir = opendir(room_path);
+    if (dir) {
+      struct dirent *entry;
+      while ((entry = readdir(dir)) != NULL) {
+        // Skip . and .. and our own pipe
+        if (strcmp(entry->d_name, ".") == 0 ||
+            strcmp(entry->d_name, "..") == 0 ||
+            strcmp(entry->d_name, username) == 0)
+          continue;
+
+        char target_pipe[512];
+        snprintf(target_pipe, sizeof(target_pipe), "%s/%s", room_path, entry->d_name);
+
+        // Fork a writer child for each target user
+        pid_t writer_pid = fork();
+        if (writer_pid == 0) { // writer child
+          // O_NONBLOCK: don't hang if the target user has no reader open
+          int wfd = open(target_pipe, O_WRONLY | O_NONBLOCK);
+          if (wfd >= 0) {
+            char msg_nl[1024];
+            snprintf(msg_nl, sizeof(msg_nl), "%s\n", message);
+            write(wfd, msg_nl, strlen(msg_nl));
+            close(wfd);
+          }
+          exit(0);
+        }
+        waitpid(writer_pid, NULL, 0); // wait for each writer to finish
+      }
+      closedir(dir);
+    }
+  }
+
+  // Ctrl+D pressed — clean up reader child and exit
+  kill(reader_pid, SIGTERM);
+  waitpid(reader_pid, NULL, 0);
+  exit(0);
+}
+
+/**
  * Part III (a): Built-in cut command.
  * Reads lines from stdin, splits by delimiter, prints specified fields.
  * Called from exec_single() in a forked child, so redirections are already set up.
@@ -411,6 +527,12 @@ void exec_single(struct command_t *command) {
     if (fd < 0) { perror("open"); exit(1); }
     dup2(fd, STDOUT_FILENO); // replace stdout with file (append mode)
     close(fd);
+  }
+
+  // Part III (b): built-in chatroom command
+  if (strcmp(command->name, "chatroom") == 0) {
+    run_chatroom(command);
+    exit(0); // run_chatroom exits itself, but just in case
   }
 
   // Part III (a): built-in cut command — handle before external PATH search
