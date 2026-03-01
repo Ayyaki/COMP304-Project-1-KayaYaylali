@@ -311,6 +311,48 @@ int prompt(struct command_t *command) {
 }
 
 /**
+ * Part III (c): Built-in calc command.
+ * A simple arithmetic calculator supporting +, -, *, / operations.
+ * Usage: calc <num1> <operator> <num2>
+ * Example: calc 10 + 5  →  15
+ */
+void run_calc(struct command_t *command) {
+  // Need: args[0]=calc, args[1]=num1, args[2]=op, args[3]=num2, args[4]=NULL
+  if (command->arg_count < 5) {
+    printf("Usage: calc <num1> <operator> <num2>\n");
+    printf("Operators: + - * /\n");
+    exit(1);
+  }
+
+  double a = atof(command->args[1]); // first operand
+  char  *op = command->args[2];      // operator
+  double b = atof(command->args[3]); // second operand
+  double result;
+
+  if (strcmp(op, "+") == 0) {
+    result = a + b;
+  } else if (strcmp(op, "-") == 0) {
+    result = a - b;
+  } else if (strcmp(op, "*") == 0) {
+    result = a * b;
+  } else if (strcmp(op, "/") == 0) {
+    if (b == 0) { printf("Error: division by zero\n"); exit(1); }
+    result = a / b;
+  } else {
+    printf("-%s: calc: unknown operator '%s'\n", sysname, op);
+    exit(1);
+  }
+
+  // Print as integer if result is a whole number, otherwise as decimal
+  if (result == (long long)result)
+    printf("%.0f\n", result);
+  else
+    printf("%g\n", result);
+
+  exit(0);
+}
+
+/**
  * Part III (b): Built-in chatroom command.
  * Implements a simple group chat using named pipes (FIFOs).
  * Room directory: /tmp/chatroom-<roomname>/
@@ -527,6 +569,12 @@ void exec_single(struct command_t *command) {
     if (fd < 0) { perror("open"); exit(1); }
     dup2(fd, STDOUT_FILENO); // replace stdout with file (append mode)
     close(fd);
+  }
+
+  // Part III (c): built-in calc command
+  if (strcmp(command->name, "calc") == 0) {
+    run_calc(command);
+    exit(0);
   }
 
   // Part III (b): built-in chatroom command
