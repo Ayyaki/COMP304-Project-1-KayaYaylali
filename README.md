@@ -187,3 +187,17 @@ COMP304-PROJECT-1/
 ├── README.md             # This file
 └── imgs/                 # Screenshots for submission
 ```
+---
+
+## Repository
+
+[https://github.com/Ayyaki/COMP304-Project-1-KayaYaylali](https://github.com/Ayyaki/COMP304-Project-1-KayaYaylali)
+ 
+---
+## AI Assistance Disclosure
+
+This project used Claude (Anthropic) AI model for the following:
+- Writing this README file.
+- Identifying which standard library headers to include.
+- Understanding the `dup2()` system call for I/O redirection.
+- Determining test case examples for each part.
