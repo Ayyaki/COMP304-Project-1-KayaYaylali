@@ -404,7 +404,7 @@ void run_chatroom(struct command_t *command) {
           // O_NONBLOCK: don't hang if the target user has no reader open
           int wfd = open(target_pipe, O_WRONLY | O_NONBLOCK);
           if (wfd >= 0) {
-            char msg_nl[2048];
+            char msg_nl[2050];
             snprintf(msg_nl, sizeof(msg_nl), "%s\n", message);
             write(wfd, msg_nl, strlen(msg_nl));
             close(wfd);
