@@ -308,6 +308,82 @@ int prompt(struct command_t *command) {
 }
 
 /**
+ * Part III (a): Built-in cut command.
+ * Reads lines from stdin, splits by delimiter, prints specified fields.
+ * Called from exec_single() in a forked child, so redirections are already set up.
+ * @param command  the parsed command (args contain -d and -f flags)
+ */
+void run_cut(struct command_t *command) {
+  char delimiter = '\t'; // default delimiter is TAB
+  int fields[256];
+  int field_count = 0;
+
+  // Parse arguments: args[0]=name, args[1..arg_count-2]=flags, args[arg_count-1]=NULL
+  for (int i = 1; i < command->arg_count - 1 && command->args[i]; i++) {
+    char *arg = command->args[i];
+
+    // -d or --delimiter: next arg (or concatenated) is the delimiter character
+    if (strcmp(arg, "-d") == 0 || strcmp(arg, "--delimiter") == 0) {
+      if (i + 1 < command->arg_count - 1 && command->args[i + 1])
+        delimiter = command->args[++i][0];
+    } else if (strncmp(arg, "-d", 2) == 0 && strlen(arg) > 2) {
+      delimiter = arg[2]; // e.g. -d:
+    }
+    // -f or --fields: parse comma-separated list of 1-based field indices
+    else if (strcmp(arg, "-f") == 0 || strcmp(arg, "--fields") == 0) {
+      if (i + 1 < command->arg_count - 1 && command->args[i + 1]) {
+        char temp[256];
+        strncpy(temp, command->args[++i], sizeof(temp) - 1);
+        char *token = strtok(temp, ",");
+        while (token && field_count < 256) {
+          fields[field_count++] = atoi(token);
+          token = strtok(NULL, ",");
+        }
+      }
+    } else if (strncmp(arg, "-f", 2) == 0 && strlen(arg) > 2) {
+      // e.g. -f1,6 (no space between flag and value)
+      char temp[256];
+      strncpy(temp, arg + 2, sizeof(temp) - 1);
+      char *token = strtok(temp, ",");
+      while (token && field_count < 256) {
+        fields[field_count++] = atoi(token);
+        token = strtok(NULL, ",");
+      }
+    }
+  }
+
+  // Read stdin line by line and print requested fields
+  char line[4096];
+  while (fgets(line, sizeof(line), stdin)) {
+    // Strip trailing newline
+    int len = strlen(line);
+    if (len > 0 && line[len - 1] == '\n')
+      line[--len] = '\0';
+
+    // Split line by delimiter: collect pointers to each field in-place
+    char *parts[256];
+    int part_count = 0;
+    parts[part_count++] = line;
+    for (int i = 0; i < len && part_count < 256; i++) {
+      if (line[i] == delimiter) {
+        line[i] = '\0';                    // terminate current field
+        parts[part_count++] = line + i + 1; // start of next field
+      }
+    }
+
+    // Print requested fields in the order specified by -f
+    for (int i = 0; i < field_count; i++) {
+      int idx = fields[i] - 1; // convert 1-based index to 0-based
+      if (i > 0)
+        putchar(delimiter); // separate fields with the same delimiter
+      if (idx >= 0 && idx < part_count)
+        printf("%s", parts[idx]);
+    }
+    putchar('\n');
+  }
+}
+
+/**
  * Part II: Execute a single command in the child process.
  * Handles I/O redirection with dup2, then searches PATH and calls execv.
  * This function never returns on success; exits on failure.
@@ -335,6 +411,12 @@ void exec_single(struct command_t *command) {
     if (fd < 0) { perror("open"); exit(1); }
     dup2(fd, STDOUT_FILENO); // replace stdout with file (append mode)
     close(fd);
+  }
+
+  // Part III (a): built-in cut command — handle before external PATH search
+  if (strcmp(command->name, "cut") == 0) {
+    run_cut(command);
+    exit(0);
   }
 
   // PATH search and execv (same as Part I)
